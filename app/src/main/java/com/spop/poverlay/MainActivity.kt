@@ -3,23 +3,30 @@ package com.spop.poverlay
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.content.ActivityNotFoundException
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
+import android.os.Process
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions
 import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.text.HtmlCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.spop.poverlay.overlay.OverlayService
+import com.spop.poverlay.sensor.heartrate.HeartRateManager
 import com.spop.poverlay.releases.ReleaseChecker
 import com.spop.poverlay.ui.theme.PTONOverlayTheme
 import kotlinx.coroutines.CoroutineScope
@@ -44,8 +51,17 @@ class MainActivity : ComponentActivity() {
         viewModel.requestOverlayPermission.observe(this) {
             requestScreenPermission()
         }
+        viewModel.requestBluetoothPermissions.observe(this) { permissions ->
+            requestBluetoothPermissions(permissions)
+        }
         viewModel.requestRestart.observe(this) {
             restartGrupetto()
+        }
+        viewModel.requestQuit.observe(this) {
+            quitGrupetto()
+        }
+        viewModel.requestIgnoreBatteryOptimizations.observe(this) {
+            requestIgnoreBatteryOptimizations()
         }
         viewModel.infoPopup.observe(this) {
             Toast.makeText(
@@ -58,7 +74,7 @@ class MainActivity : ComponentActivity() {
             PTONOverlayTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
+                    color = MaterialTheme.colors.background,
                 ) {
                     ConfigurationPage(
                         viewModel
@@ -66,9 +82,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        lifecycleScope.launchWhenResumed {
-            viewModel.onResume()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                viewModel.onResume()
+            }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.onAppResumed()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        viewModel.onAppStopped()
     }
 
     private fun restartGrupetto() {
@@ -90,6 +118,24 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun quitGrupetto() {
+        Toast.makeText(
+            this@MainActivity,
+            HtmlCompat.fromHtml("<big>Closing Grupetto</big>", HtmlCompat.FROM_HTML_MODE_LEGACY),
+            Toast.LENGTH_LONG
+        ).apply { setGravity(Gravity.CENTER, 0, 0) }.show()
+
+        CoroutineScope(Dispatchers.Main).launch {
+            // Explicitly stop long-running components before closing the task so Android won't revive it.
+            stopService(Intent(this@MainActivity, OverlayService::class.java))
+            HeartRateManager.stop()
+            (application as GrupettoApplication).bleServer.stop()
+            delay(750L)
+            finishAffinity()
+            finishAndRemoveTask()
+        }
+    }
+
     private val overlayPermissionRequest =
         registerForActivityResult(StartActivityForResult()) {
             if (Build.VERSION.SDK_INT >= 23) {
@@ -99,11 +145,42 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    private val bluetoothPermissionRequest =
+        registerForActivityResult(RequestMultiplePermissions()) { permissions ->
+            val allGranted = permissions.values.all { it }
+            viewModel.onBluetoothPermissionsResult(allGranted)
+        }
+
+    private val batteryOptimizationRequest =
+        registerForActivityResult(StartActivityForResult()) {
+            viewModel.onBatteryOptimizationRequestCompleted()
+        }
+
     private fun requestScreenPermission() = Intent(
         "android.settings.action.MANAGE_OVERLAY_PERMISSION",
         Uri.parse("package:${packageName}")
     ).apply {
         overlayPermissionRequest.launch(this)
+    }
+
+    private fun requestBluetoothPermissions(permissions: Array<String>) {
+        bluetoothPermissionRequest.launch(permissions)
+    }
+
+    private fun requestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return
+        }
+
+        val packageUri = Uri.parse("package:$packageName")
+        val requestIntent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri)
+
+        try {
+            batteryOptimizationRequest.launch(requestIntent)
+        } catch (_: ActivityNotFoundException) {
+            val fallbackIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+            batteryOptimizationRequest.launch(fallbackIntent)
+        }
     }
 }
 
@@ -112,6 +189,6 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DefaultPreview() {
     PTONOverlayTheme {
-        Configuration()
+        // Preview placeholder - actual ConfigurationPage requires ViewModel
     }
 }

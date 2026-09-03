@@ -4,10 +4,16 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import androidx.compose.material.Icon
+import androidx.compose.material.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,11 +42,14 @@ fun OverlayMinimizedContent(
     cadenceLabel: String,
     speedLabel: String,
     resistanceLabel: String,
+    heartRateLabel: String,
     contentAlpha: Float,
     timerLabel: String,
     timerPaused: Boolean,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onMinimizeToggle: () -> Unit,
     onLayout: (IntSize) -> Unit
 ) {
     val backgroundShape = if (isMinimized) {
@@ -113,6 +122,37 @@ fun OverlayMinimizedContent(
             )
         }
 
+        Spacer(modifier = Modifier.width(6.dp))
+        Icon(
+            imageVector = Icons.Filled.Settings,
+            contentDescription = "Open settings",
+            tint = Color.White,
+            modifier = Modifier
+                .size(20.dp)
+                .clickable { onOpenSettings() }
+        )
+
+        // Minimize/Maximize button
+        Spacer(modifier = Modifier.width(8.dp))
+        Icon(
+            imageVector = if (isMinimized) {
+                when (location) {
+                    OverlayLocation.Top -> Icons.Filled.KeyboardArrowDown
+                    OverlayLocation.Bottom -> Icons.Filled.KeyboardArrowUp
+                }
+            } else {
+                when (location) {
+                    OverlayLocation.Top -> Icons.Filled.KeyboardArrowUp
+                    OverlayLocation.Bottom -> Icons.Filled.KeyboardArrowDown
+                }
+            },
+            contentDescription = if (isMinimized) "Expand" else "Minimize",
+            tint = Color.White,
+            modifier = Modifier
+                .size(24.dp)
+                .clickable { onMinimizeToggle() }
+        )
+
         if (isMinimized) {
             Spacer(modifier = Modifier.width(4.dp))
             OverlayTimerField(
@@ -129,14 +169,20 @@ fun OverlayMinimizedContent(
             Spacer(modifier = Modifier.width(4.dp))
             OverlayTimerField(
                 modifier = Modifier.width(58.dp),
+                timerLabel = resistanceLabel,
+                iconDrawable = R.drawable.ic_resistance
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            OverlayTimerField(
+                modifier = Modifier.width(58.dp),
                 timerLabel = speedLabel,
                 iconDrawable = R.drawable.ic_speed
             )
             Spacer(modifier = Modifier.width(4.dp))
             OverlayTimerField(
                 modifier = Modifier.width(58.dp),
-                timerLabel = resistanceLabel,
-                iconDrawable = R.drawable.ic_resistance
+                timerLabel = heartRateLabel,
+                iconDrawable = R.drawable.ic_hrm
             )
         }
     }
